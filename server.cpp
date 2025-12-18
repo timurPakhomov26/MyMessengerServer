@@ -37,7 +37,7 @@ void Server::onReadyRead() {
     if (!socket) return;
 
     QString data = QString::fromUtf8(socket->readAll()).trimmed();
-
+    if (data.isEmpty()) return;
     // 1. РЕГИСТРАЦИЯ (если сокета еще нет в карте)
     if (!m_clients.values().contains(socket)) {
         m_clients[data] = socket;
