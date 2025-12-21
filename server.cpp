@@ -59,11 +59,18 @@ void Server::onReadyRead() {
 
     }
     // 1. РЕГИСТРАЦИЯ (если сокета еще нет в карте)
-    if (!m_clients.values().contains(socket)) {
+    if (!m_clients.values().contains(socket)){
+
+        if(isValidName(data)){
         m_clients[data] = socket;
         qDebug() << "User registered:" << data;       
-        // СРАЗУ рассылаем обновленный список всем
+
         broadcastUserList();
+        }
+        else{
+            socket->write("SYSTEM: Invalid nickname! Must be 3-20 chars and no ':'\n");
+            socket->disconnectFromHost(); // disconnect user
+        }
         return;
     }
 
@@ -115,6 +122,19 @@ QString Server::getUptime() const{
     int s = secs % 60;
     return QString("%1h %2m %3s").arg(hours).arg(mins).arg(s);
 }
+
+bool Server::isValidName(const QString &name)
+{
+    if(name.length() < 3 || name.length() > 20)  return false;
+
+    if(name.contains(":")) return false;
+
+    if(name.trimmed().isEmpty()) return false;
+
+    return true;
+}
+
+
 
 
 

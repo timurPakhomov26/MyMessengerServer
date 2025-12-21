@@ -23,6 +23,7 @@ private:
     void broadcastUserList();
     QDateTime m_startTime;
     QString getUptime() const;
+    bool isValidName(const QString &name);
 };
 
 #endif
