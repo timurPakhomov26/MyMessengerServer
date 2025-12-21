@@ -19,7 +19,7 @@ private slots:
 
 private:
     QTcpServer *m_server;
-    QMap<QString, QTcpSocket*> m_clients; // Имя -> Сокет
+    QMap<QString, QTcpSocket*> m_clients;
     void broadcastUserList();
     QDateTime m_startTime;
     QString getUptime() const;

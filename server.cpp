@@ -43,15 +43,25 @@ void Server::onReadyRead() {
     if (data.isEmpty()) return;
 
     if (data == "/uptime") {
-        QString response = "SERVER UPTIME: " + getUptime();
-        socket->write(response.toUtf8());
+        socket->write(QString("SERVER: My uptime is %1").arg(getUptime()).toUtf8());
         return;
+    }
+    if(data.startsWith("/me ")){
+        QString sender = m_clients.key(socket);
+        QString str = data.mid(4);
+        QString broadcastMsg = "* " + sender + " " + str;
+
+        for (auto *clientSocket : m_clients.values()) {
+            clientSocket->write(broadcastMsg.toUtf8());
+        }
+
+        return;
+
     }
     // 1. РЕГИСТРАЦИЯ (если сокета еще нет в карте)
     if (!m_clients.values().contains(socket)) {
         m_clients[data] = socket;
-        qDebug() << "User registered:" << data;
-
+        qDebug() << "User registered:" << data;       
         // СРАЗУ рассылаем обновленный список всем
         broadcastUserList();
         return;
