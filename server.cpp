@@ -1,8 +1,11 @@
 #include "server.h"
 #include <QStringList>
+#include <QDateTime>
 
 Server::Server(QObject *parent) : QObject(parent) {
     m_server = new QTcpServer(this);
+    m_startTime = QDateTime::currentDateTime();
+
     connect(m_server, &QTcpServer::newConnection, this, &Server::onNewConnection);
 
     // Слушаем порт 1234
@@ -38,6 +41,12 @@ void Server::onReadyRead() {
 
     QString data = QString::fromUtf8(socket->readAll()).trimmed();
     if (data.isEmpty()) return;
+
+    if (data == "/uptime") {
+        QString response = "SERVER UPTIME: " + getUptime();
+        socket->write(response.toUtf8());
+        return;
+    }
     // 1. РЕГИСТРАЦИЯ (если сокета еще нет в карте)
     if (!m_clients.values().contains(socket)) {
         m_clients[data] = socket;
@@ -60,6 +69,18 @@ void Server::onReadyRead() {
             socket->write("System: User not found.");
         }
     }
+
+    if (data.startsWith("/")) {
+        if (data == "/uptime") {
+            // Вызываем наш метод и отправляем ответ именно этому сокету
+            socket->write(QString("SERVER: Мой аптайм уже %1")
+                              .arg(getUptime()).toUtf8());
+        }
+        else if (data == "/help") {
+            socket->write("SERVER: Доступные команды: /uptime, /help");
+        }
+        return;
+    }
 }
 
 void Server::onDisconnected() {
@@ -75,3 +96,21 @@ void Server::onDisconnected() {
     // СРАЗУ рассылаем обновленный список (без ушедшего юзера)
     broadcastUserList();
 }
+
+QString Server::getUptime() const{
+    quint64 secs = m_startTime.secsTo(QDateTime::currentDateTime());
+
+    int hours = secs / 3600;
+    int mins = (secs % 3600) / 60;
+    int s = secs % 60;
+    return QString("%1h %2m %3s").arg(hours).arg(mins).arg(s);
+}
+
+
+
+
+
+
+
+
+

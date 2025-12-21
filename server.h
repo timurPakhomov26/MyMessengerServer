@@ -5,6 +5,7 @@
 #include <QTcpServer>
 #include <QTcpSocket>
 #include <QMap>
+#include <QDateTime>
 
 class Server : public QObject {
     Q_OBJECT
@@ -20,6 +21,8 @@ private:
     QTcpServer *m_server;
     QMap<QString, QTcpSocket*> m_clients; // Имя -> Сокет
     void broadcastUserList();
+    QDateTime m_startTime;
+    QString getUptime() const;
 };
 
 #endif
