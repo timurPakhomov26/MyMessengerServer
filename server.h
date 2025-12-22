@@ -12,6 +12,12 @@ class Server : public QObject {
 public:
     explicit Server(QObject *parent = nullptr);
 
+    enum class LogLevel{
+        Info,
+        Warning,
+        Error
+    };
+
 private slots:
     void onNewConnection();
     void onReadyRead();
@@ -20,10 +26,13 @@ private slots:
 private:
     QTcpServer *m_server;
     QMap<QString, QTcpSocket*> m_clients;
-    void broadcastUserList();
     QDateTime m_startTime;
+
+    void broadcastUserList();
     QString getUptime() const;
     bool isValidName(const QString &name);
+    void sendToAll(const QString &message);
+    void log(const QString &message,LogLevel level = LogLevel::Info);
 };
 
 #endif
