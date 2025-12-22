@@ -7,6 +7,8 @@ Server::Server(QObject *parent) : QObject(parent)
     m_server = new QTcpServer(this);
     m_startTime = QDateTime::currentDateTime();
 
+    initDb();
+
     connect(m_server, &QTcpServer::newConnection, this, &Server::onNewConnection);
 
     if (m_server->listen(QHostAddress::Any, 1234))
@@ -148,6 +150,22 @@ void Server::log(const QString &message, LogLevel level)
 
     QString time = QDateTime::currentDateTime().toString("yyyy-MM-dd hh:mm:ss");
     qDebug() << QString("%1 %2 %3").arg(time, prefix, message).toUtf8().constData();
+}
+
+void Server::initDb()
+{
+    m_db = QSqlDatabase::addDatabase("QPSQL");
+    m_db.setHostName("localhost");
+    m_db.setDatabaseName("messenger_db");
+    m_db.setUserName("postgres");
+    m_db.setPassword("MY_RRRITK2");
+
+    if (!m_db.open())
+    {
+        log("Database connection FAILED: " + m_db.lastError().text(), LogLevel::Error);
+    } else {
+        log("Database connection SUCCESS! PostgreSQL is ready.");
+    }
 }
 
 

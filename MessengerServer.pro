@@ -1,4 +1,4 @@
-QT = core network
+QT = core network sql
 
 CONFIG += c++17 cmdline
 

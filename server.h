@@ -6,6 +6,9 @@
 #include <QTcpSocket>
 #include <QMap>
 #include <QDateTime>
+#include <QSqlQuery>
+#include <QSqlError>
+#include <QSqlDatabase>
 
 class Server : public QObject {
     Q_OBJECT
@@ -27,12 +30,14 @@ private:
     QTcpServer *m_server;
     QMap<QString, QTcpSocket*> m_clients;
     QDateTime m_startTime;
+    QSqlDatabase m_db;
 
     void broadcastUserList();
     QString getUptime() const;
     bool isValidName(const QString &name);
     void sendToAll(const QString &message);
     void log(const QString &message,LogLevel level = LogLevel::Info);
+    void initDb();
 };
 
 #endif
