@@ -132,9 +132,10 @@ bool Server::isValidName(const QString &name)
 
 void Server::sendToAll(const QString &message)
 {
+    QByteArray data = (message + "\n").toUtf8();
     for(auto *socket : m_clients.values())
     {
-        socket->write(message.toUtf8());
+        socket->write(data);
     }
     log("Broadcast: " + message);
 }
