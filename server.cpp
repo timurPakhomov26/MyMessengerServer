@@ -67,6 +67,7 @@ void Server::onReadyRead()
         if (isValidName(data))
         {
             m_clients[data] = socket;
+            sendChatHistory(socket);
             sendToAll("SYSTEM: Пользователь [" + data + "] вошел в чат");
             broadcastUserList();
             log("User registered: " + data);
@@ -180,6 +181,29 @@ void Server::initDb()
         log("Database connection FAILED: " + m_db.lastError().text(), LogLevel::Error);
     } else {
         log("Database connection SUCCESS! PostgreSQL is ready.");
+    }
+}
+
+void Server::sendChatHistory(QTcpSocket *socket)
+{
+    QSqlQuery query;
+    query.prepare("SELECT sender, message FROM messages ORDER BY timestamp DESC LIMIT 50");
+
+    if (query.exec())
+    {
+        QStringList history;
+        while (query.next())
+        {
+            QString sender = query.value(0).toString();
+            QString msg = query.value(1).toString();
+
+            history.prepend(sender + ": " + msg);
+        }
+
+        for (const QString &line : history)
+        {
+            socket->write((line + "\n").toUtf8());
+        }
     }
 }
 
