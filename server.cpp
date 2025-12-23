@@ -67,7 +67,6 @@ void Server::onReadyRead()
         if (isValidName(data))
         {
             m_clients[data] = socket;
-            sendChatHistory(socket);
             sendToAll("SYSTEM: Пользователь [" + data + "] вошел в чат");
             broadcastUserList();
             log("User registered: " + data);
