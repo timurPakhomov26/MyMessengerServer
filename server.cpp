@@ -89,6 +89,21 @@ void Server::onReadyRead()
         if (m_clients.contains(target))
         {
             m_clients[target]->write(QString("%1: %2").arg(senderName, text).toUtf8());
+            QSqlQuery query;
+            query.prepare("INSERT INTO messages (sender, receiver, message) "
+                          "VALUES (:sender, :receiver, :message)");
+            query.bindValue(":sender", senderName);
+            query.bindValue(":receiver", target);
+            query.bindValue(":message", text);
+
+            if (!query.exec())
+            {
+                log("DB Insert Error: " + query.lastError().text(), LogLevel::Error);
+            }
+            else
+            {
+                log("Message from [" + senderName + "] to [" + target + "] saved.");
+            }
         }
         else
         {
