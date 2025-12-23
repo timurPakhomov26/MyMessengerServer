@@ -38,7 +38,7 @@ private:
     void sendToAll(const QString &message);
     void log(const QString &message,LogLevel level = LogLevel::Info);
     void initDb();
-    void sendChatHistory(QTcpSocket *socket);
+    void sendChatHistory(QTcpSocket *socket,const QString &myNick,const QString &friendNick);
 };
 
 #endif

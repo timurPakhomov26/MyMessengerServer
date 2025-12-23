@@ -111,6 +111,13 @@ void Server::onReadyRead()
             socket->write("SYSTEM: User not found.");
         }
     }
+    if (data.startsWith("/get_history "))
+    {
+        QString friendNick = data.mid(13);
+        QString myNick = m_clients.key(socket);
+        sendChatHistory(socket, myNick, friendNick);
+        return;
+    }
 }
 
 void Server::onDisconnected()
@@ -184,27 +191,36 @@ void Server::initDb()
     }
 }
 
-void Server::sendChatHistory(QTcpSocket *socket)
+void Server::sendChatHistory(QTcpSocket *socket,const QString &myNick,const QString &friendNick)
 {
     QSqlQuery query;
-    query.prepare("SELECT sender, message FROM messages ORDER BY timestamp DESC LIMIT 50");
+    query.prepare("SELECT sender, message, timestamp FROM messages "
+                  "WHERE (sender = :me AND receiver = :friend) "
+                  "OR (sender = :friend AND receiver = :me) "
+                  "ORDER BY timestamp ASC LIMIT 100");
+    query.bindValue(":me", myNick);
+    query.bindValue(":friend", friendNick);
 
     if (query.exec())
     {
-        QStringList history;
+        socket->write("SYSTEM:START_HISTORY\n");
         while (query.next())
         {
+            QString time = query.value(2).toDateTime().toString("hh:mm");
             QString sender = query.value(0).toString();
             QString msg = query.value(1).toString();
 
-            history.prepend(sender + ": " + msg);
+            QString line = QString("[%1] %2: %3\n").arg(time, sender, msg);
+            socket->write(line.toUtf8());
         }
 
-        for (const QString &line : history)
-        {
-            socket->write((line + "\n").toUtf8());
-        }
+        socket->write("SYSTEM: --- Конец истории ---\n");
     }
+    else
+    {
+        log("History SQL Error: " + query.lastError().text(), LogLevel::Error);
+    }
+
 }
 
 
