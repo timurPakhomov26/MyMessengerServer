@@ -54,6 +54,14 @@ void Server::onReadyRead()
         return;
     }
 
+    if (data.startsWith("/get_history "))
+    {
+        QString friendNick = data.mid(13);
+        QString myNick = m_clients.key(socket);
+        sendChatHistory(socket, myNick, friendNick);
+        return;
+    }
+
     if (data.startsWith("/me "))
     {
         QString senderName = m_clients.key(socket);
@@ -110,13 +118,7 @@ void Server::onReadyRead()
             socket->write("SYSTEM: User not found.");
         }
     }
-    if (data.startsWith("/get_history "))
-    {
-        QString friendNick = data.mid(13);
-        QString myNick = m_clients.key(socket);
-        sendChatHistory(socket, myNick, friendNick);
-        return;
-    }
+
 }
 
 void Server::onDisconnected()
