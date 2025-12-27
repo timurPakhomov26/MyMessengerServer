@@ -42,6 +42,15 @@ void Server::onReadyRead()
     QString data = QString::fromUtf8(socket->readAll()).trimmed();
     if (data.isEmpty()) return;
 
+    if (data.startsWith("/get_history "))
+    {
+        QString friendNick = data.mid(13).trimmed();
+        QString myNick = m_clients.key(socket);
+        log("History request: " + myNick + " wants chat with " + friendNick);
+        sendChatHistory(socket, myNick, friendNick);
+        return;
+    }
+
     if (data == "/uptime")
     {
         socket->write(QString("SERVER: My uptime is %1").arg(getUptime()).toUtf8());
@@ -54,13 +63,6 @@ void Server::onReadyRead()
         return;
     }
 
-    if (data.startsWith("/get_history "))
-    {
-        QString friendNick = data.mid(13);
-        QString myNick = m_clients.key(socket);
-        sendChatHistory(socket, myNick, friendNick);
-        return;
-    }
 
     if (data.startsWith("/me "))
     {
@@ -196,30 +198,37 @@ void Server::initDb()
 void Server::sendChatHistory(QTcpSocket *socket,const QString &myNick,const QString &friendNick)
 {
     QSqlQuery query;
-    query.prepare("SELECT sender, message, timestamp FROM messages "
-                  "WHERE (sender IN (:me, :friend) AND receiver IN (:me, :friend)) "
-                  "ORDER BY timestamp ASC LIMIT 100");
+    if (myNick == friendNick) {
+        query.prepare("SELECT sender, message, timestamp FROM messages "
+                      "WHERE sender = :me AND receiver = :me "
+                      "ORDER BY timestamp ASC LIMIT 100");
+    }
+    else
+    {
+        query.prepare("SELECT sender, message, timestamp FROM messages "
+                      "WHERE (sender = :me AND receiver = :friend) "
+                      "OR (sender = :friend AND receiver = :me) "
+                      "ORDER BY timestamp ASC LIMIT 100");
+        query.bindValue(":friend", friendNick);
+    }
     query.bindValue(":me", myNick);
-    query.bindValue(":friend", friendNick);
 
     if (query.exec())
     {
-        socket->write("SYSTEM:START_HISTORY\n");
         while (query.next())
         {
             QString time = query.value(2).toDateTime().toString("hh:mm");
             QString sender = query.value(0).toString();
             QString msg = query.value(1).toString();
-
+            // Формат: "12:30 nick: текст"
             QString line = QString("%1 %2: %3\n").arg(time, sender, msg);
             socket->write(line.toUtf8());
         }
-
-        socket->write("SYSTEM: --- Конец истории ---\n");
+        log("History sent to " + myNick + " for chat with " + friendNick);
     }
     else
     {
-        log("History SQL Error: " + query.lastError().text(), LogLevel::Error);
+        log("SQL Error: " + query.lastError().text(), LogLevel::Error);
     }
 
 }
