@@ -210,7 +210,7 @@ void Server::sendChatHistory(QTcpSocket *socket,const QString &myNick,const QStr
             QString sender = query.value(0).toString();
             QString msg = query.value(1).toString();
 
-            QString line = QString("[%1] %2: %3\n").arg(time, sender, msg);
+            QString line = QString("%1 %2: %3\n").arg(time, sender, msg);
             socket->write(line.toUtf8());
         }
 
