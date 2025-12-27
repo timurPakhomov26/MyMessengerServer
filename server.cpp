@@ -196,8 +196,7 @@ void Server::sendChatHistory(QTcpSocket *socket,const QString &myNick,const QStr
 {
     QSqlQuery query;
     query.prepare("SELECT sender, message, timestamp FROM messages "
-                  "WHERE (sender = :me AND receiver = :friend) "
-                  "OR (sender = :friend AND receiver = :me) "
+                  "WHERE (sender IN (:me, :friend) AND receiver IN (:me, :friend)) "
                   "ORDER BY timestamp ASC LIMIT 100");
     query.bindValue(":me", myNick);
     query.bindValue(":friend", friendNick);
