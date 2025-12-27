@@ -96,7 +96,8 @@ void Server::onReadyRead()
 
         if (m_clients.contains(target))
         {
-            m_clients[target]->write(QString("%1: %2").arg(senderName, text).toUtf8());
+            QString time = QDateTime::currentDateTime().toString("hh:mm");
+            m_clients[target]->write(QString("%1 %2: %3\n").arg(time, senderName, text).toUtf8());
             QSqlQuery query;
             query.prepare("INSERT INTO messages (sender, receiver, message) "
                           "VALUES (:sender, :receiver, :message)");
