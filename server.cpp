@@ -96,16 +96,27 @@ void Server::onReadyRead()
         QString text = data.section(':', 1);
         QString senderName = m_clients.key(socket);
 
-        if (m_clients.contains(target))
-        {
+        if (m_clients.contains(target)) {
             QString time = QDateTime::currentDateTime().toString("hh:mm");
-            m_clients[target]->write(QString("%1 %2: %3\n").arg(time, senderName, text).toUtf8());
+            QString packet = QString("%1 %2: %3\n").arg(time, senderName, text);
+
+            // 1. Шлем получателю (чтобы у него сразу появилось)
+            m_clients[target]->write(packet.toUtf8());
+
+            // 2. Шлем ОТПРАВИТЕЛЮ (самому себе, чтобы у тебя сразу выскочил фиолетовый баббл)
+            // Если ты пишешь не сам себе, то шлем копию тебе в сокет
+            if (target != senderName) {
+                socket->write(packet.toUtf8());
+            }
+
+            // 3. Сохраняем в базу (PostgreSQL)
             QSqlQuery query;
-            query.prepare("INSERT INTO messages (sender, receiver, message) "
-                          "VALUES (:sender, :receiver, :message)");
-            query.bindValue(":sender", senderName);
-            query.bindValue(":receiver", target);
-            query.bindValue(":message", text);
+            query.prepare("INSERT INTO messages (sender, receiver, message) VALUES (:s, :r, :m)");
+            query.bindValue(":s", senderName);
+            query.bindValue(":r", target);
+            query.bindValue(":m", text);
+            query.exec();
+
 
             if (!query.exec())
             {
