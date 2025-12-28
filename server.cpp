@@ -171,66 +171,94 @@ void Server::handleFileTransfer(QTcpSocket *socket, const QByteArray &data)
 
     QString target = QString::fromUtf8(parts[1]);
     QString fileName = QString::fromUtf8(parts[2]);
-    //int fileSize = parts[3].toInt();
+    int fileSize = parts[3].toInt();
     QString senderName = m_clients.key(socket);
-    // Вычисляем, где начинаются сами байты файла
-    // Суммируем длины заголовков и 4 двоеточия
-    //int headerSize = parts[0].size() + parts[1].size() + parts[2].size() + parts[3].size() + 4;
-     int headerSize = 5 + parts[1].size() + 1 + parts[2].size() + 1 + parts[3].size() + 1;
+
+    // Вырезаем данные файла
+    int headerSize = 5 + parts[1].size() + 1 + parts[2].size() + 1 + parts[3].size() + 1;
     QByteArray fileBytes = data.mid(headerSize);
 
-     QSqlQuery query;
-     query.prepare("INSERT INTO messages (sender, receiver, message, file_data, is_file) "
-                   "VALUES (:s, :r, :m, :d, TRUE)");
-     query.bindValue(":s", senderName);
-     query.bindValue(":r", target);
-     query.bindValue(":m", fileName);
-     query.bindValue(":d", fileBytes);
+    // Сохраняем в PostgreSQL (is_file = TRUE)
+    QSqlQuery query;
+    query.prepare("INSERT INTO messages (sender, receiver, message, file_data, is_file) "
+                  "VALUES (:s, :r, :m, :d, TRUE)");
+    query.bindValue(":s", senderName);
+    query.bindValue(":r", target);
+    query.bindValue(":m", fileName);
+    query.bindValue(":d", fileBytes);
 
-     if (query.exec()) {
-         log(QString("File %1 saved from %2").arg(fileName, senderName));
+    if (query.exec()) {
+        log(QString("File %1 (%2 bytes) saved from %3").arg(fileName).arg(fileSize).arg(senderName));
 
-         // 2. Формируем пакет для рассылки клиентам: FILE_REC:от_кого:имя_файла:байты
-         QByteArray relayPacket = "FILE_REC:" + senderName.toUtf8() + ":" + fileName.toUtf8() + ":" + fileBytes;
-         if (m_clients.contains(target)) m_clients[target]->write(relayPacket);
-         socket->write(relayPacket);
-     }
+        // Рассылаем клиентам
+        QByteArray relayPacket = "FILE_REC:" + senderName.toUtf8() + ":" + fileName.toUtf8() + ":" + fileBytes;
+        if (m_clients.contains(target)) m_clients[target]->write(relayPacket);
+        socket->write(relayPacket);
+    } else {
+        log("DB File Error: " + query.lastError().text(), LogLevel::Error);
+    }
 }
 
 void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 {
     if (data.isEmpty()) return;
-    QString myNick = m_clients.key(socket);
 
-    // 1. КОМАНДЫ (Uptime, History и т.д.)
-    if (data.startsWith("/get_history ")) {
-        sendChatHistory(socket, myNick, data.mid(13).trimmed());
-        return;
-    }
-    if (myNick.isEmpty()) {
+    // 1.1. РЕГИСТРАЦИЯ (Если юзер еще не в системе)
+    if (!m_clients.values().contains(socket)) {
         if (isValidName(data)) {
             m_clients[data] = socket;
+
+            // СНАЧАЛА добавили в QMap, ПОТОМ рассылаем всем
             sendToAll("SYSTEM: Пользователь [" + data + "] вошел в чат");
-            broadcastUserList();
+            broadcastUserList(); // Тот самый метод, который оживит твой список справа
+
+            log("User registered: " + data);
+        } else {
+            log("Rejected nick: " + data, LogLevel::Warning);
+            socket->write("SYSTEM: Invalid nickname!\n");
+            socket->disconnectFromHost();
         }
+        return; // ОБЯЗАТЕЛЬНО выходим
+    }
+
+    // 1.2. КОМАНДЫ (Уже для зарегистрированных)
+    if (data.startsWith("/get_history ")) {
+        QString friendNick = data.mid(13).trimmed();
+        QString myNick = m_clients.key(socket);
+        sendChatHistory(socket, myNick, friendNick);
         return;
     }
+
+    if (data == "/uptime") {
+        socket->write(QString("SERVER: My uptime is %1\n").arg(getUptime()).toUtf8());
+        return;
+    }
+
+    // 1.3. ПЕРЕСЫЛКА ЛИЧНЫХ СООБЩЕНИЙ
     if (data.contains(":")) {
         QString target = data.section(':', 0, 0);
         QString text = data.section(':', 1);
-        QString time = QDateTime::currentDateTime().toString("hh:mm");
-        QString packet = QString("%1 %2: %3\n").arg(time, myNick, text);
+        QString senderName = m_clients.key(socket);
 
         if (m_clients.contains(target)) {
-            m_clients[target]->write(packet.toUtf8());
-            if (target != myNick) socket->write(packet.toUtf8());
+            QString time = QDateTime::currentDateTime().toString("hh:mm");
+            QString packet = QString("%1 %2: %3\n").arg(time, senderName, text);
 
+            m_clients[target]->write(packet.toUtf8());
+            if (target != senderName) {
+                socket->write(packet.toUtf8());
+            }
+
+            // Запись в БД (is_file = FALSE)
             QSqlQuery query;
-            query.prepare("INSERT INTO messages (sender, receiver, message, is_file) VALUES (:s, :r, :m, FALSE)");
-            query.bindValue(":s", myNick);
+            query.prepare("INSERT INTO messages (sender, receiver, message, is_file) "
+                          "VALUES (:s, :r, :m, FALSE)");
+            query.bindValue(":s", senderName);
             query.bindValue(":r", target);
             query.bindValue(":m", text);
             query.exec();
+        } else {
+            socket->write("SYSTEM: User not found.\n");
         }
     }
 }
