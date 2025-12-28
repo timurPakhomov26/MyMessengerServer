@@ -178,6 +178,16 @@ void Server::handleFileTransfer(QTcpSocket *socket, const QByteArray &data)
     int headerSize = parts[0].size() + parts[1].size() + parts[2].size() + parts[3].size() + 4;
     QByteArray fileBytes = data.mid(headerSize);
 
+    log(QString("Receiving file: %1 (%2 bytes) from %3")
+            .arg(fileName)
+            .arg(fileSize)
+            .arg(m_clients.key(socket)));
+
+    // Проверка на целостность (базовая)
+    if (fileBytes.size() < fileSize)
+    {
+        log("Warning: File chunk is incomplete!", LogLevel::Warning);
+    }
     QString senderName = m_clients.key(socket);
 
     // СОХРАНЯЕМ В POSTGRES (BYTEA)
