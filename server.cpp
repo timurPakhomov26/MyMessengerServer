@@ -49,8 +49,10 @@ void Server::onReadyRead()
     }
     else
     {
-        QString strData = QString::fromUtf8(data).trimmed();
-        handleTextMessage(socket, strData);
+        QString textData = QString::fromUtf8(data).trimmed();
+        if (textData.length() > 1000 && !textData.startsWith("FILE:")) return;
+
+        handleTextMessage(socket, textData);
     }
 
 }
