@@ -39,6 +39,9 @@ private:
     void log(const QString &message,LogLevel level = LogLevel::Info);
     void initDb();
     void sendChatHistory(QTcpSocket *socket,const QString &myNick,const QString &friendNick);
+
+    void handleFileTransfer(QTcpSocket *socket, const QByteArray &data);
+    void handleTextMessage(QTcpSocket *socket, const QString &data);
 };
 
 #endif
