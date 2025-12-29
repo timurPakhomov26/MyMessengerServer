@@ -263,11 +263,15 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
             query.bindValue(":r", target);
             query.bindValue(":m", text);
             query.exec();
-        } else {
+        }
+        else
+        {
             socket->write("SYSTEM: User not found.\n");
         }
+        }
     }
-}
+    }
+
 
 
 
