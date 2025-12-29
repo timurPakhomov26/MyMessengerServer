@@ -40,19 +40,19 @@ void Server::onReadyRead()
     if (!socket) return;
 
     // QString data = QString::fromUtf8(socket->readAll()).trimmed();
-    QByteArray data = socket->readAll();
-    if (data.isEmpty()) return;
+    QByteArray rawData = socket->readAll();
+    if (rawData.isEmpty()) return;
 
-    if (data.startsWith("FILE:"))
-    {
-        handleFileTransfer(socket, data);
-    }
-    else
-    {
-        QString textData = QString::fromUtf8(data).trimmed();
-        if (textData.length() > 1000 && !textData.startsWith("FILE:")) return;
-
-        handleTextMessage(socket, textData);
+    if (rawData.contains("FILE:")) {
+        int filePos = rawData.indexOf("FILE:");
+        QByteArray cleanFileData = rawData.mid(filePos);
+        handleFileTransfer(socket, cleanFileData);
+    } else {
+        QString textData = QString::fromUtf8(rawData).trimmed();
+        // Если это не пустой мусор - обрабатываем как текст
+        if (!textData.isEmpty()) {
+            handleTextMessage(socket, textData);
+        }
     }
 
 }
@@ -223,6 +223,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         return; // ОБЯЗАТЕЛЬНО выходим
     }
 
+
     // 1.2. КОМАНДЫ (Уже для зарегистрированных)
     if (data.startsWith("/get_history ")) {
         QString friendNick = data.mid(13).trimmed();
@@ -241,6 +242,9 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         QString target = data.section(':', 0, 0);
         QString text = data.section(':', 1);
         QString senderName = m_clients.key(socket);
+
+        if (target.length() > 20 || target.isEmpty() || target.contains(" ")) {
+            return;
 
         if (m_clients.contains(target)) {
             QString time = QDateTime::currentDateTime().toString("hh:mm");
