@@ -243,10 +243,11 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         QString text = data.section(':', 1);
         QString senderName = m_clients.key(socket);
 
-        if (target.length() > 20 || target.isEmpty() || target.contains(" ")) {
+        if (target.length() > 20  || target.contains(" "))
             return;
 
-        if (m_clients.contains(target)) {
+        if (m_clients.contains(target))
+        {
             QString time = QDateTime::currentDateTime().toString("hh:mm");
             QString packet = QString("%1 %2: %3\n").arg(time, senderName, text);
 
@@ -268,7 +269,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         {
             socket->write("SYSTEM: User not found.\n");
         }
-        }
+
     }
     }
 
