@@ -167,35 +167,53 @@ void Server::sendChatHistory(QTcpSocket *socket,const QString &myNick,const QStr
 void Server::handleFileTransfer(QTcpSocket *socket, const QByteArray &data)
 {
     QList<QByteArray> parts = data.split(':');
-    if (parts.size() < 5) return;
+
+    // Проверка, что пришло хотя бы 5 частей (префикс, цель, имя, размер, начало данных)
+    if (parts.size() < 5) {
+        log("File Transfer Error: Invalid header format", LogLevel::Warning);
+        return;
+    }
 
     QString target = QString::fromUtf8(parts[1]);
     QString fileName = QString::fromUtf8(parts[2]);
-    int fileSize = parts[3].toInt();
+    int fileSize = parts[3].toInt(); // Тот самый размер, который ждет клиент
     QString senderName = m_clients.key(socket);
 
-    // Вырезаем данные файла
-    int headerSize = 5 + parts[1].size() + 1 + parts[2].size() + 1 + parts[3].size() + 1;
-    QByteArray fileBytes = data.mid(headerSize);
+    // 2. ВЫРЕЗАЕМ ЧИСТЫЕ БАЙТЫ (пропускаем заголовки и 4 двоеточия)
+    // Длина заголовка = "FILE" (4) + target + fileName + fileSize + 4 двоеточия
+    int headerLength = 5 + parts[1].size() + 1 + parts[2].size() + 1 + parts[3].size() + 1;
+    QByteArray fileBytes = data.mid(headerLength);
 
-    // Сохраняем в PostgreSQL (is_file = TRUE)
+    // 3. СОХРАНЯЕМ В БАЗУ (PostgreSQL)
     QSqlQuery query;
     query.prepare("INSERT INTO messages (sender, receiver, message, file_data, is_file) "
                   "VALUES (:s, :r, :m, :d, TRUE)");
     query.bindValue(":s", senderName);
     query.bindValue(":r", target);
-    query.bindValue(":m", fileName);
-    query.bindValue(":d", fileBytes);
+    query.bindValue(":m", fileName); // Имя файла сохраняем в колонку message
+    query.bindValue(":d", fileBytes); // Сами байты в BYTEA
 
     if (query.exec()) {
-        log(QString("File %1 (%2 bytes) saved from %3").arg(fileName).arg(fileSize).arg(senderName));
+        log(QString("File %1 (%2 bytes) saved from %3 to %4")
+                .arg(fileName).arg(fileBytes.size()).arg(senderName).arg(target));
 
-        // Рассылаем клиентам
-        QByteArray relayPacket = "FILE_REC:" + senderName.toUtf8() + ":" + fileName.toUtf8() + ":" + fileBytes;
-        if (m_clients.contains(target)) m_clients[target]->write(relayPacket);
+        // 4. ФОРМИРУЕМ ПАКЕТ ДЛЯ РАССЫЛКИ (FILE_REC:sender:fileName:fileSize:DATA)
+        // Важно: не добавляй \n в конце, иначе байты картинки побьются!
+        QByteArray relayPacket = "FILE_REC:" + senderName.toUtf8() + ":" +
+                                 fileName.toUtf8() + ":" +
+                                 QByteArray::number(fileBytes.size()) + ":" +
+                                 fileBytes;
+
+        // Отправляем получателю
+        if (m_clients.contains(target)) {
+            m_clients[target]->write(relayPacket);
+        }
+
+        // Отправляем зеркало отправителю (тебе), чтобы баббл выскочил сразу
         socket->write(relayPacket);
+
     } else {
-        log("DB File Error: " + query.lastError().text(), LogLevel::Error);
+        log("DB Error (File): " + query.lastError().text(), LogLevel::Error);
     }
 }
 
