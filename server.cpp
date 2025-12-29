@@ -126,42 +126,54 @@ void Server::initDb()
     }
 }
 
-void Server::sendChatHistory(QTcpSocket *socket,const QString &myNick,const QString &friendNick)
-{
+void Server::sendChatHistory(QTcpSocket *socket, const QString &myNick, const QString &friendNick) {
     QSqlQuery query;
+
+    // Бронебойный запрос: достаем отправителя, текст(имя файла), время, флаг файла и сами байты
+    // Выбираем последние 50 сообщений
     if (myNick == friendNick) {
-        query.prepare("SELECT sender, message, timestamp FROM messages "
+        query.prepare("SELECT sender, message, timestamp, is_file, file_data FROM messages "
                       "WHERE sender = :me AND receiver = :me "
-                      "ORDER BY timestamp ASC LIMIT 100");
-    }
-    else
-    {
-        query.prepare("SELECT sender, message, timestamp FROM messages "
+                      "ORDER BY timestamp ASC LIMIT 50");
+    } else {
+        query.prepare("SELECT sender, message, timestamp, is_file, file_data FROM messages "
                       "WHERE (sender = :me AND receiver = :friend) "
                       "OR (sender = :friend AND receiver = :me) "
-                      "ORDER BY timestamp ASC LIMIT 100");
+                      "ORDER BY timestamp ASC LIMIT 50");
         query.bindValue(":friend", friendNick);
     }
     query.bindValue(":me", myNick);
 
-    if (query.exec())
-    {
-        while (query.next())
-        {
-            QString time = query.value(2).toDateTime().toString("hh:mm");
+    if (query.exec()) {
+        while (query.next()) {
             QString sender = query.value(0).toString();
-            QString msg = query.value(1).toString();
-            // Формат: "12:30 nick: текст"
-            QString line = QString("%1 %2: %3\n").arg(time, sender, msg);
-            socket->write(line.toUtf8());
-        }
-        log("History sent to " + myNick + " for chat with " + friendNick);
-    }
-    else
-    {
-        log("SQL Error: " + query.lastError().text(), LogLevel::Error);
-    }
+            QString messageText = query.value(1).toString();
+            QString time = query.value(2).toDateTime().toString("hh:mm");
+            bool isFile = query.value(3).toBool();
 
+            if (isFile) {
+                // Если это файл — достаем байты из BYTEA
+                QByteArray fileBytes = query.value(4).toByteArray();
+
+                // Формируем наш стандартный пакет FILE_REC:от_кого:имя:размер:байты
+                QByteArray filePacket = "FILE_REC:" + sender.toUtf8() + ":" +
+                                        messageText.toUtf8() + ":" +
+                                        QByteArray::number(fileBytes.size()) + ":" +
+                                        fileBytes;
+
+                socket->write(filePacket);
+                // Небольшая задержка, чтобы TCP не склеил два файла в один поток (на всякий случай)
+                socket->waitForBytesWritten(100);
+            } else {
+                // Если это обычный текст — шлем по старому протоколу
+                QString line = QString("%1 %2: %3\n").arg(time, sender, messageText);
+                socket->write(line.toUtf8());
+            }
+        }
+        log("History (with media) sent to " + myNick + " for chat with " + friendNick);
+    } else {
+        log("SQL History Error: " + query.lastError().text(), LogLevel::Error);
+    }
 }
 
 void Server::handleFileTransfer(QTcpSocket *socket, const QByteArray &data)
