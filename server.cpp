@@ -43,14 +43,12 @@ void Server::onReadyRead()
     QByteArray rawData = socket->readAll();
     if (rawData.isEmpty()) return;
 
-    if (rawData.contains("FILE:")) {
-        int filePos = rawData.indexOf("FILE:");
-        QByteArray cleanFileData = rawData.mid(filePos);
-        handleFileTransfer(socket, cleanFileData);
+    if (rawData.startsWith("FILE:")) {
+        handleFileTransfer(socket, rawData);
     } else {
         QString textData = QString::fromUtf8(rawData).trimmed();
         // Если это не пустой мусор - обрабатываем как текст
-        if (!textData.isEmpty()) {
+        if (!textData.isEmpty() && textData.length() < 1000) {
             handleTextMessage(socket, textData);
         }
     }
