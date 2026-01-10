@@ -61,13 +61,18 @@ void Server::onReadyRead()
 
     // А. Блок авторизации (Сюда пускаем ДАЖЕ неавторизованных)
     if (data.startsWith("AUTH:")) {
-        QString user = data.section(':', 1, 1).trimmed();
-        QString pass = data.section(':', 2, 2).trimmed();
+        QStringList parts = data.split(':');
+        if (parts.size() >= 3) {
+            QString user = parts[1].trimmed();
+            QString pass = parts[2].trimmed(); // Теперь берем строго второй индекс
+
+            log("Пытаюсь авторизовать: Логин[" + user + "] Пароль[" + pass + "]");
 
         if (user.isEmpty() || pass.isEmpty()) {
             log("Ошибка: Пустой логин или пароль", LogLevel::Warning);
             return;
         }
+
 
         log("Пытаюсь авторизовать: Логин[" + user + "] Пароль[" + pass + "]");
 
@@ -104,6 +109,7 @@ void Server::onReadyRead()
                 broadcastUserList();
                 log("Новый пользователь: " + user);
             }
+        }
         }
         return;
     }
