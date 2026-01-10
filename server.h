@@ -42,6 +42,8 @@ private:
 
     void handleFileTransfer(QTcpSocket *socket, const QByteArray &data);
     void handleTextMessage(QTcpSocket *socket, const QString &data);
+
+    void sendGroupHistory(QTcpSocket *socket);
 };
 
 #endif

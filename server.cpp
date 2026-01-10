@@ -304,30 +304,21 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 {
     if (data.isEmpty()) return;
 
-    // 1.1. РЕГИСТРАЦИЯ (Если юзер еще не в системе)
-    if (!m_clients.values().contains(socket)) {
-        if (isValidName(data)) {
-            m_clients[data] = socket;
+    // Имя отправителя (уже залогиненного через AUTH)
+    QString senderName = m_clients.key(socket, "");
+    if (senderName.isEmpty()) return;
 
-            // СНАЧАЛА добавили в QMap, ПОТОМ рассылаем всем
-            sendToAll("SYSTEM: Пользователь [" + data + "] вошел в чат");
-            broadcastUserList(); // Тот самый метод, который оживит твой список справа
-
-            log("User registered: " + data);
-        } else {
-            log("Rejected nick: " + data, LogLevel::Warning);
-            socket->write("SYSTEM: Invalid nickname!\n");
-            socket->disconnectFromHost();
-        }
-        return; // ОБЯЗАТЕЛЬНО выходим
-    }
-
-
-    // 1.2. КОМАНДЫ (Уже для зарегистрированных)
+    // --- 1.2. КОМАНДЫ ---
     if (data.startsWith("/get_history ")) {
-        QString friendNick = data.mid(13).trimmed();
-        QString myNick = m_clients.key(socket);
-        sendChatHistory(socket, myNick, friendNick);
+        QString target = data.mid(13).trimmed();
+
+        if (target == "GROUP_CHAT") {
+            // Отправляем историю общего чата
+            sendGroupHistory(socket);
+        } else {
+            // Отправляем личную историю
+            sendChatHistory(socket, senderName, target);
+        }
         return;
     }
 
@@ -336,14 +327,31 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         return;
     }
 
-    // 1.3. ПЕРЕСЫЛКА ЛИЧНЫХ СООБЩЕНИЙ
+    // --- 1.3. ПЕРЕСЫЛКА СООБЩЕНИЙ (ЛИЧНЫХ И ГРУППОВЫХ) ---
     if (data.contains(":")) {
-        QString target = data.section(':', 0, 0);
-        QString text = data.section(':', 1);
-        QString senderName = m_clients.key(socket);
+        QString target = data.section(':', 0, 0).trimmed();
+        QString text = data.section(':', 1).trimmed();
 
-        if (target.length() > 20  || target.contains(" "))
+        // А. ЛОГИКА ОБЩЕГО ЧАТА
+        if (target == "GROUP_CHAT") {
+            // 1. Сохраняем в таблицу group_messages
+            QSqlQuery query;
+            query.prepare("INSERT INTO group_messages (sender, message) VALUES (:s, :m)");
+            query.bindValue(":s", senderName);
+            query.bindValue(":m", text);
+            query.exec();
+
+            // 2. Рассылаем ВСЕМ онлайн (включая себя)
+            QString time = QDateTime::currentDateTime().toString("hh:mm");
+            // Шлем спец-пакет GROUP_MSG, чтобы клиент понял, что это Общак
+            QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, senderName, text);
+
+            for (QTcpSocket *s : m_clients.values()) {
+                s->write(packet.toUtf8());
+            }
+            log("Групповое сообщение от: " + senderName);
             return;
+        }
 
         if (m_clients.contains(target))
         {
@@ -355,7 +363,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
                 socket->write(packet.toUtf8());
             }
 
-            // Запись в БД (is_file = FALSE)
+            // Запись в БД личных сообщений
             QSqlQuery query;
             query.prepare("INSERT INTO messages (sender, receiver, message, is_file) "
                           "VALUES (:s, :r, :m, FALSE)");
@@ -368,7 +376,27 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         {
             socket->write("SYSTEM: User not found.\n");
         }
+    }
+}
 
+void Server::sendGroupHistory(QTcpSocket *socket)
+{
+    QSqlQuery query;
+    query.prepare("SELECT sender, message, timestamp FROM group_messages ORDER BY timestamp ASC LIMIT 50");
+
+    if (query.exec()) {
+        while (query.next()) {
+            QString sender = query.value(0).toString();
+            QString text = query.value(1).toString();
+            QString time = query.value(2).toDateTime().toString("hh:mm");
+
+            // Шлем в формате GROUP_MSG, чтобы клиент правильно их отрисовал
+            QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, sender, text);
+            socket->write(packet.toUtf8());
+        }
+        socket->write("SYSTEM: История общего чата загружена\n");
+    } else {
+        log("Ошибка загрузки истории общака: " + query.lastError().text(), LogLevel::Error);
     }
 }
 
