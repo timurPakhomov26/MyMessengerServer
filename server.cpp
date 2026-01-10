@@ -43,15 +43,71 @@ void Server::onReadyRead()
     QByteArray rawData = socket->readAll();
     if (rawData.isEmpty()) return;
 
+    auto senderName = m_clients.key(socket, "");
+    bool isAuthenticated = !senderName.isEmpty();
+
     if (rawData.startsWith("FILE:")) {
-        handleFileTransfer(socket, rawData);
-    } else {
-        QString textData = QString::fromUtf8(rawData).trimmed();
-        // Если это не пустой мусор - обрабатываем как текст
-        if (!textData.isEmpty() && textData.length() < 1000) {
-            handleTextMessage(socket, textData);
+        if (!isAuthenticated) {
+            log("Попытка кражи трафика! Неавторизованный файл отброшен.", LogLevel::Warning);
+            socket->write("SYSTEM: Сначала авторизуйтесь!\n");
+            return;
         }
+        handleFileTransfer(socket, rawData);
+        return;
     }
+    QString data = QString::fromUtf8(rawData).trimmed();
+
+    // А. Блок авторизации (Сюда пускаем ДАЖЕ неавторизованных)
+    if (data.startsWith("AUTH:")) {
+        QStringList parts = data.split(':');
+        if (parts.size() < 3) return;
+
+        QString user = parts[1].trimmed();
+        QString pass = parts[2].trimmed();
+
+        QSqlQuery query;
+        query.prepare("SELECT password_hash FROM users WHERE username = :u");
+        query.bindValue(":u", user);
+
+        if (query.exec() && query.next()) {
+            // Пользователь найден — сверяем пароль
+            if (query.value(0).toString() == pass) {
+                m_clients[user] = socket;
+                socket->write("AUTH_OK\n");
+
+                // Ставим статус Online в базе
+                QSqlQuery up;
+                up.prepare("UPDATE users SET is_online = TRUE WHERE username = :u");
+                up.bindValue(":u", user);
+                up.exec();
+
+                broadcastUserList();
+                log("User logged in: " + user);
+            } else {
+                socket->write("AUTH_FAIL:Неверный пароль!\n");
+                log("Неудачный вход для: " + user);
+            }
+        } else {
+            // Юзера нет — регистрируем нового
+            query.prepare("INSERT INTO users (username, password_hash, is_online) VALUES (:u, :p, TRUE)");
+            query.bindValue(":u", user);
+            query.bindValue(":p", pass);
+            if (query.exec()) {
+                m_clients[user] = socket;
+                socket->write("AUTH_OK:Registered\n");
+                broadcastUserList();
+                log("Новый пользователь: " + user);
+            }
+        }
+        return;
+    }
+
+    if (!isAuthenticated) {
+        socket->write("SYSTEM: Доступ запрещен. Введите логин и пароль.\n");
+        return;
+    }
+
+    handleTextMessage(socket, data);
 
 }
 
@@ -129,8 +185,7 @@ void Server::initDb()
 void Server::sendChatHistory(QTcpSocket *socket, const QString &myNick, const QString &friendNick) {
     QSqlQuery query;
 
-    // Бронебойный запрос: достаем отправителя, текст(имя файла), время, флаг файла и сами байты
-    // Выбираем последние 50 сообщений
+
     if (myNick == friendNick) {
         query.prepare("SELECT sender, message, timestamp, is_file, file_data FROM messages "
                       "WHERE sender = :me AND receiver = :me "
