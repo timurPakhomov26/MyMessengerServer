@@ -303,113 +303,87 @@ void Server::handleFileTransfer(QTcpSocket *socket, const QByteArray &data)
 void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 {
     if (data.isEmpty()) return;
-    QString text = data.section(':', 1).trimmed();
-    // Имя отправителя (уже залогиненного через AUTH)
-    QString senderName = m_clients.key(socket, "");
-    if (senderName.isEmpty()) return;
 
-    // --- 1.2. КОМАНДЫ ---
+    // Узнаем, кто нам пишет (сокет должен быть в m_clients после AUTH)
+    QString senderName = m_clients.key(socket, "");
+    if (senderName.isEmpty()) {
+        socket->write("SYSTEM: Сначала авторизуйтесь (AUTH:login:pass)\n");
+        return;
+    }
+
+    // --- 1. ОБРАБОТКА КОМАНД ---
     if (data.startsWith("/get_history ")) {
         QString target = data.mid(13).trimmed();
-
         if (target == "GROUP_CHAT") {
-
-            //sendGroupHistory(socket);
-            QSqlQuery q;
-            // Прямой INSERT без prepare
-            QString sql = QString("INSERT INTO group_messages (sender, message) VALUES ('%1', '%2')").arg(senderName, text);
-            if (!q.exec(sql)) {
-                log("ОШИБКА ЗАПИСИ В ОБЩАК: " + q.lastError().text());
-            }
-
-            QString time = QDateTime::currentDateTime().toString("hh:mm");
-            QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, senderName, text);
-
-            for (QTcpSocket *s : m_clients.values()) {
-                s->write(packet.toUtf8());
-                s->flush(); // Выталкиваем байты!
-            }
-            return;
+            log("Запрос истории ОБЩАКА от: " + senderName);
+            sendGroupHistory(socket);
         } else {
-            // Отправляем личную историю
+            log("Запрос личной истории: " + senderName + " <-> " + target);
             sendChatHistory(socket, senderName, target);
         }
         return;
     }
 
-    if (data == "/uptime") {
-        socket->write(QString("SERVER: My uptime is %1\n").arg(getUptime()).toUtf8());
-        return;
-    }
-
-    // --- 1.3. ПЕРЕСЫЛКА СООБЩЕНИЙ (ЛИЧНЫХ И ГРУППОВЫХ) ---
+    // --- 2. ОБРАБОТКА СООБЩЕНИЙ (ЛИЧНЫХ И ГРУППОВЫХ) ---
     if (data.contains(":")) {
         QString target = data.section(':', 0, 0).trimmed();
+        QString text = data.section(':', 1).trimmed();
+        QString time = QDateTime::currentDateTime().toString("hh:mm");
 
-
-        // А. ЛОГИКА ОБЩЕГО ЧАТА
+        // А. ОБЩИЙ ЧАТ (GROUP_CHAT)
         if (target == "GROUP_CHAT") {
-            // 1. Сохраняем в таблицу group_messages
-            QSqlQuery query;
-            QString insertSql = QString("INSERT INTO group_messages (sender, message) VALUES ('%1', '%2')")
-                                    .arg(senderName).arg(text);
-            query.exec(insertSql);
+            // Сохраняем в таблицу group_messages
+            QSqlQuery q;
+            QString sql = QString("INSERT INTO group_messages (sender, message) VALUES ('%1', '%2')")
+                              .arg(senderName).arg(text);
+            q.exec(sql);
 
-            // 2. Рассылаем ВСЕМ онлайн (включая себя)
-            QString time = QDateTime::currentDateTime().toString("hh:mm");
-            // Шлем спец-пакет GROUP_MSG, чтобы клиент понял, что это Общак
+            // Рассылаем ВСЕМ онлайн
             QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, senderName, text);
-
             for (QTcpSocket *s : m_clients.values()) {
                 s->write(packet.toUtf8());
+                s->flush();
             }
-            log("Групповое сообщение от: " + senderName);
+            log("Групповое сообщение от [" + senderName + "]: " + text);
             return;
         }
 
-        if (m_clients.contains(target))
-        {
-            QString time = QDateTime::currentDateTime().toString("hh:mm");
+        // Б. ЛИЧНЫЕ СООБЩЕНИЯ
+        if (m_clients.contains(target)) {
+            // Если адресат онлайн - шлем сразу
             QString packet = QString("%1 %2: %3\n").arg(time, senderName, text);
-
             m_clients[target]->write(packet.toUtf8());
-            if (target != senderName) {
-                socket->write(packet.toUtf8());
-            }
+            m_clients[target]->flush();
 
-            // Запись в БД личных сообщений
-            QSqlQuery query;
-            query.prepare("INSERT INTO messages (sender, receiver, message, is_file) "
-                          "VALUES (:s, :r, :m, FALSE)");
-            query.bindValue(":s", senderName);
-            query.bindValue(":r", target);
-            query.bindValue(":m", text);
-            query.exec();
+            // Себе тоже шлем, чтобы отобразилось в окне
+            socket->write(packet.toUtf8());
+            socket->flush();
+        } else {
+            socket->write(("SYSTEM: Пользователь [" + target + "] сейчас оффлайн. Сообщение сохранено.\n").toUtf8());
         }
-        else
-        {
-            socket->write("SYSTEM: User not found.\n");
-        }
+
+        // В любом случае сохраняем личку в таблицу messages
+        QSqlQuery q;
+        QString sql = QString("INSERT INTO messages (sender, receiver, message, is_file) "
+                              "VALUES ('%1', '%2', '%3', FALSE)")
+                          .arg(senderName).arg(target).arg(text);
+        q.exec(sql);
     }
 }
 
 void Server::sendGroupHistory(QTcpSocket *socket)
 {
-    // QSqlQuery q;
-    // // Прямой INSERT без prepare
-    // QString sql = QString("INSERT INTO group_messages (sender, message) VALUES ('%1', '%2')").arg(senderName, text);
-    // if (!q.exec(sql)) {
-    //     log("ОШИБКА ЗАПИСИ В ОБЩАК: " + q.lastError().text());
-    // }
+    QSqlQuery q("SELECT sender, message, timestamp FROM group_messages ORDER BY timestamp ASC LIMIT 50");
+    while (q.next()) {
+        QString packet = QString("GROUP_MSG:%1:%2:%3\n")
+        .arg(q.value(2).toDateTime().toString("hh:mm"),
+             q.value(0).toString(),
+             q.value(1).toString());
 
-    // QString time = QDateTime::currentDateTime().toString("hh:mm");
-    // QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, senderName, text);
-
-    // for (QTcpSocket *s : m_clients.values()) {
-    //     s->write(packet.toUtf8());
-    //     s->flush(); // Выталкиваем байты!
-    // }
-    // return;
+        // ВОТ ЗДЕСЬ ИСПОЛЬЗУЕТСЯ socket!
+        socket->write(packet.toUtf8());
+    }
+    socket->flush();
 }
 
 
