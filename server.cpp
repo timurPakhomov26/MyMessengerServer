@@ -39,8 +39,10 @@ void Server::onReadyRead()
     auto *socket = qobject_cast<QTcpSocket*>(sender());
     if (!socket) return;
 
-    // QString data = QString::fromUtf8(socket->readAll()).trimmed();
     QByteArray rawData = socket->readAll();
+    log("ПОЛУЧЕНО СЫРЫХ БАЙТ: " + QString::number(rawData.size()) + " Содержимое: " + rawData);
+
+    // QString data = QString::fromUtf8(socket->readAll()).trimmed();
     if (rawData.isEmpty()) return;
 
     auto senderName = m_clients.key(socket, "");
@@ -349,7 +351,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         }
 
     }
-    }
+}
 
 
 
