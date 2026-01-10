@@ -61,11 +61,15 @@ void Server::onReadyRead()
 
     // А. Блок авторизации (Сюда пускаем ДАЖЕ неавторизованных)
     if (data.startsWith("AUTH:")) {
-        QStringList parts = data.split(':');
-        if (parts.size() < 3) return;
+        QString user = data.section(':', 1, 1).trimmed();
+        QString pass = data.section(':', 2, 2).trimmed();
 
-        QString user = parts[1].trimmed();
-        QString pass = parts[2].trimmed();
+        if (user.isEmpty() || pass.isEmpty()) {
+            log("Ошибка: Пустой логин или пароль", LogLevel::Warning);
+            return;
+        }
+
+        log("Пытаюсь авторизовать: Логин[" + user + "] Пароль[" + pass + "]");
 
         QSqlQuery query;
         query.prepare("SELECT password_hash FROM users WHERE username = :u");
