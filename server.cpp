@@ -67,8 +67,7 @@ void Server::onReadyRead()
             QString pass = parts[2].split('\n')[0].trimmed();
 
             QSqlQuery checkQuery; // Отдельный запрос для проверки
-            checkQuery.prepare("SELECT password_hash FROM users WHERE username = :u");
-            checkQuery.bindValue(":u", user);
+            QString checkString = QString("SELECT password_hash FROM users WHERE username = '%1'").arg(user);
 
             if (checkQuery.exec() && checkQuery.next()) {
                 // ЮЗЕР ЕСТЬ - ПРОВЕРЯЕМ ПАРОЛЬ
@@ -89,18 +88,21 @@ void Server::onReadyRead()
             } else {
                 // ЮЗЕРА НЕТ - РЕГИСТРИРУЕМ (Создаем НОВЫЙ объект запроса!)
                 QSqlQuery regQuery;
-                regQuery.prepare("INSERT INTO users (username, password_hash, is_online) VALUES (:u, :p, TRUE)");
-                regQuery.bindValue(":u", user);
-                regQuery.bindValue(":p", pass);
 
-                if (regQuery.exec()) {
+                // Формируем строку запроса вручную (Важно: одинарные кавычки для строк в SQL!)
+                QString queryString = QString(
+                                          "INSERT INTO users (username, password_hash, is_online) "
+                                          "VALUES ('%1', '%2', TRUE)"
+                                          ).arg(user).arg(pass);
+
+                if (regQuery.exec(queryString)) {
                     m_clients[user] = socket;
                     socket->write("AUTH_OK:Registered\n");
                     broadcastUserList();
-                    log("SUCCESS: Новый юзер " + user + " создан в БД");
+                    log("SUCCESS: Юзер " + user + " создан прямым запросом!");
                 } else {
-                    // Если не создался - выводим ОШИБКУ ГИТАРА в лог
-                    log("ОШИБКА РЕГИСТРАЦИИ: " + regQuery.lastError().text(), LogLevel::Error);
+                    log("КРИТИЧЕСКАЯ ОШИБКА: " + regQuery.lastError().text(), LogLevel::Error);
+                    socket->write("AUTH_FAIL:Ошибка базы\n");
                 }
             }
         }
