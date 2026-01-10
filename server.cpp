@@ -61,22 +61,18 @@ void Server::onReadyRead()
 
     // А. Блок авторизации (Сюда пускаем ДАЖЕ неавторизованных)
     if (data.startsWith("AUTH:")) {
-        // 1. Разбиваем строго по двоеточию
         QStringList parts = data.split(':');
-
         if (parts.size() >= 3) {
-
             QString user = parts[1].trimmed();
-            QString pass = parts[2].split('\n')[0].split('\r')[0].trimmed();
+            QString pass = parts[2].split('\n')[0].trimmed();
 
-            log("ЧИСТЫЙ ВХОД -> Логин: [" + user + "] Пароль: [" + pass + "]");
+            QSqlQuery checkQuery; // Отдельный запрос для проверки
+            checkQuery.prepare("SELECT password_hash FROM users WHERE username = :u");
+            checkQuery.bindValue(":u", user);
 
-            QSqlQuery query;
-            query.prepare("SELECT password_hash FROM users WHERE username = :u");
-            query.bindValue(":u", user);
-
-            if (query.exec() && query.next()) {
-                if (query.value(0).toString() == pass) {
+            if (checkQuery.exec() && checkQuery.next()) {
+                // ЮЗЕР ЕСТЬ - ПРОВЕРЯЕМ ПАРОЛЬ
+                if (checkQuery.value(0).toString() == pass) {
                     m_clients[user] = socket;
                     socket->write("AUTH_OK\n");
 
@@ -86,21 +82,25 @@ void Server::onReadyRead()
                     up.exec();
 
                     broadcastUserList();
-                    log("SUCCESS: " + user + " вошел в систему");
+                    log("SUCCESS: " + user + " вошел");
                 } else {
                     socket->write("AUTH_FAIL:Неверный пароль\n");
-                    log("FAIL: Неверный пароль для " + user);
                 }
             } else {
-                // РЕГИСТРАЦИЯ
-                query.prepare("INSERT INTO users (username, password_hash, is_online) VALUES (:u, :p, TRUE)");
-                query.bindValue(":u", user);
-                query.bindValue(":p", pass);
-                if (query.exec()) {
+                // ЮЗЕРА НЕТ - РЕГИСТРИРУЕМ (Создаем НОВЫЙ объект запроса!)
+                QSqlQuery regQuery;
+                regQuery.prepare("INSERT INTO users (username, password_hash, is_online) VALUES (:u, :p, TRUE)");
+                regQuery.bindValue(":u", user);
+                regQuery.bindValue(":p", pass);
+
+                if (regQuery.exec()) {
                     m_clients[user] = socket;
                     socket->write("AUTH_OK:Registered\n");
                     broadcastUserList();
-                    log("SUCCESS: Новый юзер " + user + " создан");
+                    log("SUCCESS: Новый юзер " + user + " создан в БД");
+                } else {
+                    // Если не создался - выводим ОШИБКУ ГИТАРА в лог
+                    log("ОШИБКА РЕГИСТРАЦИИ: " + regQuery.lastError().text(), LogLevel::Error);
                 }
             }
         }
