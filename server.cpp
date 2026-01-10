@@ -66,43 +66,39 @@ void Server::onReadyRead()
             QString user = parts[1].trimmed();
             QString pass = parts[2].split('\n')[0].trimmed();
 
-            QSqlQuery checkQuery; // Отдельный запрос для проверки
-            QString checkString = QString("SELECT password_hash FROM users WHERE username = '%1'").arg(user);
+            QSqlQuery checkQuery;
+            QString checkStr = QString("SELECT password_hash FROM users WHERE username = '%1'").arg(user);
 
-            if (checkQuery.exec() && checkQuery.next()) {
-                // ЮЗЕР ЕСТЬ - ПРОВЕРЯЕМ ПАРОЛЬ
-                if (checkQuery.value(0).toString() == pass) {
+            if (checkQuery.exec(checkStr) && checkQuery.next()) {
+                // --- 1. ЮЗЕР СУЩЕСТВУЕТ -> ПРОВЕРЯЕМ ПАРОЛЬ ---
+                QString dbPass = checkQuery.value(0).toString();
+                if (dbPass == pass) {
                     m_clients[user] = socket;
                     socket->write("AUTH_OK\n");
 
+                    // Ставим статус Online
                     QSqlQuery up;
-                    up.prepare("UPDATE users SET is_online = TRUE WHERE username = :u");
-                    up.bindValue(":u", user);
-                    up.exec();
+                    up.exec(QString("UPDATE users SET is_online = TRUE WHERE username = '%1'").arg(user));
 
                     broadcastUserList();
-                    log("SUCCESS: " + user + " вошел");
+                    log("SUCCESS: " + user + " вошел в систему (пароль верный)");
                 } else {
-                    socket->write("AUTH_FAIL:Неверный пароль\n");
+                    socket->write("AUTH_FAIL:Неверный пароль!\n");
+                    log("FAIL: Неверный пароль для юзера " + user);
                 }
             } else {
-                // ЮЗЕРА НЕТ - РЕГИСТРИРУЕМ (Создаем НОВЫЙ объект запроса!)
+                // --- 2. ЮЗЕРА НЕТ -> РЕГИСТРИРУЕМ НОВОГО ---
                 QSqlQuery regQuery;
+                QString regStr = QString("INSERT INTO users (username, password_hash, is_online) "
+                                         "VALUES ('%1', '%2', TRUE)").arg(user).arg(pass);
 
-                // Формируем строку запроса вручную (Важно: одинарные кавычки для строк в SQL!)
-                QString queryString = QString(
-                                          "INSERT INTO users (username, password_hash, is_online) "
-                                          "VALUES ('%1', '%2', TRUE)"
-                                          ).arg(user).arg(pass);
-
-                if (regQuery.exec(queryString)) {
+                if (regQuery.exec(regStr)) {
                     m_clients[user] = socket;
                     socket->write("AUTH_OK:Registered\n");
                     broadcastUserList();
-                    log("SUCCESS: Юзер " + user + " создан прямым запросом!");
+                    log("SUCCESS: Новый юзер " + user + " создан в БД");
                 } else {
-                    log("КРИТИЧЕСКАЯ ОШИБКА: " + regQuery.lastError().text(), LogLevel::Error);
-                    socket->write("AUTH_FAIL:Ошибка базы\n");
+                    log("КРИТИЧЕСКАЯ ОШИБКА РЕГИСТРАЦИИ: " + regQuery.lastError().text(), LogLevel::Error);
                 }
             }
         }
