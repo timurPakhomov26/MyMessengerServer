@@ -303,7 +303,7 @@ void Server::handleFileTransfer(QTcpSocket *socket, const QByteArray &data)
 void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 {
     if (data.isEmpty()) return;
-
+    QString text = data.section(':', 1).trimmed();
     // Имя отправителя (уже залогиненного через AUTH)
     QString senderName = m_clients.key(socket, "");
     if (senderName.isEmpty()) return;
@@ -314,7 +314,22 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 
         if (target == "GROUP_CHAT") {
 
-            sendGroupHistory(socket);
+            //sendGroupHistory(socket);
+            QSqlQuery q;
+            // Прямой INSERT без prepare
+            QString sql = QString("INSERT INTO group_messages (sender, message) VALUES ('%1', '%2')").arg(senderName, text);
+            if (!q.exec(sql)) {
+                log("ОШИБКА ЗАПИСИ В ОБЩАК: " + q.lastError().text());
+            }
+
+            QString time = QDateTime::currentDateTime().toString("hh:mm");
+            QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, senderName, text);
+
+            for (QTcpSocket *s : m_clients.values()) {
+                s->write(packet.toUtf8());
+                s->flush(); // Выталкиваем байты!
+            }
+            return;
         } else {
             // Отправляем личную историю
             sendChatHistory(socket, senderName, target);
@@ -330,7 +345,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
     // --- 1.3. ПЕРЕСЫЛКА СООБЩЕНИЙ (ЛИЧНЫХ И ГРУППОВЫХ) ---
     if (data.contains(":")) {
         QString target = data.section(':', 0, 0).trimmed();
-        QString text = data.section(':', 1).trimmed();
+
 
         // А. ЛОГИКА ОБЩЕГО ЧАТА
         if (target == "GROUP_CHAT") {
@@ -380,21 +395,21 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 
 void Server::sendGroupHistory(QTcpSocket *socket)
 {
-    QSqlQuery query;
-    QString sql = "SELECT sender, message, timestamp FROM group_messages ORDER BY timestamp ASC LIMIT 50";
+    // QSqlQuery q;
+    // // Прямой INSERT без prepare
+    // QString sql = QString("INSERT INTO group_messages (sender, message) VALUES ('%1', '%2')").arg(senderName, text);
+    // if (!q.exec(sql)) {
+    //     log("ОШИБКА ЗАПИСИ В ОБЩАК: " + q.lastError().text());
+    // }
 
-    if (query.exec(sql)) {
-        while (query.next()) {
-            QString packet = QString("GROUP_MSG:%1:%2:%3\n")
-            .arg(query.value(2).toDateTime().toString("hh:mm"),
-                 query.value(0).toString(),
-                 query.value(1).toString());
-            socket->write(packet.toUtf8());
-        }
-        socket->write("SYSTEM: История общака загружена\n");
-    } else {
-        log("ОШИБКА БД: " + query.lastError().text());
-    }
+    // QString time = QDateTime::currentDateTime().toString("hh:mm");
+    // QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, senderName, text);
+
+    // for (QTcpSocket *s : m_clients.values()) {
+    //     s->write(packet.toUtf8());
+    //     s->flush(); // Выталкиваем байты!
+    // }
+    // return;
 }
 
 
