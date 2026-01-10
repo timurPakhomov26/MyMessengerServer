@@ -21,8 +21,22 @@ Server::Server(QObject *parent) : QObject(parent)
 // Функция рассылки списка имен всем подключенным
 void Server::broadcastUserList()
 {
-    QStringList users = m_clients.keys();
-    sendToAll("USERS_LIST:" + users.join(","));
+    QSqlQuery query("SELECT username, is_online FROM users ORDER BY username ASC");
+    QStringList userStatusList;
+
+    while (query.next()) {
+        QString user = query.value(0).toString();
+        bool isOnline = query.value(1).toBool();
+        // Формат пакета: timur:1,vovchik:0
+        userStatusList << QString("%1:%2").arg(user).arg(isOnline ? "1" : "0");
+    }
+
+    QString packet = "USERS_LIST:" + userStatusList.join(",") + "\n";
+
+    // Рассылаем этот список ВСЕМ, кто сейчас физически в сети
+    for (QTcpSocket *socket : m_clients.values()) {
+        socket->write(packet.toUtf8());
+    }
 }
 
 void Server::onNewConnection()
@@ -117,13 +131,17 @@ void Server::onReadyRead()
 void Server::onDisconnected()
 {
     auto *socket = qobject_cast<QTcpSocket*>(sender());
-    QString name = m_clients.key(socket);
+    QString name = m_clients.key(socket,"");
     if (!name.isEmpty())
     {
         m_clients.remove(name);
-        sendToAll("SYSTEM: Пользователь [" + name + "] покинул чат");
+        QSqlQuery query;
+        query.prepare("UPDATE users SET is_online = FALSE, last_seen = NOW() WHERE username = :u");
+        query.bindValue(":u", name);
+        query.exec();
+
+        log("User offline: " + name);
         broadcastUserList();
-        log("User disconnected: " + name);
     }
     socket->deleteLater();
 }
