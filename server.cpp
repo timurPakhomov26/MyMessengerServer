@@ -313,7 +313,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 
     // --- 1. ОБРАБОТКА КОМАНД ---
     if (data.startsWith("/get_history ")) {
-        QString target = data.mid(13).trimmed();
+        QString target = data.section(':', 0, 0).trimmed();
         if (target == "GROUP_CHAT") {
             log("Запрос истории ОБЩАКА от: " + senderName);
             sendGroupHistory(socket);
