@@ -61,55 +61,48 @@ void Server::onReadyRead()
 
     // А. Блок авторизации (Сюда пускаем ДАЖЕ неавторизованных)
     if (data.startsWith("AUTH:")) {
+        // 1. Разбиваем строго по двоеточию
         QStringList parts = data.split(':');
+
         if (parts.size() >= 3) {
+
             QString user = parts[1].trimmed();
-            QString pass = parts[2].trimmed(); // Теперь берем строго второй индекс
+            QString pass = parts[2].split('\n')[0].split('\r')[0].trimmed();
 
-            log("Пытаюсь авторизовать: Логин[" + user + "] Пароль[" + pass + "]");
+            log("ЧИСТЫЙ ВХОД -> Логин: [" + user + "] Пароль: [" + pass + "]");
 
-        if (user.isEmpty() || pass.isEmpty()) {
-            log("Ошибка: Пустой логин или пароль", LogLevel::Warning);
-            return;
-        }
-
-
-        log("Пытаюсь авторизовать: Логин[" + user + "] Пароль[" + pass + "]");
-
-        QSqlQuery query;
-        query.prepare("SELECT password_hash FROM users WHERE username = :u");
-        query.bindValue(":u", user);
-
-        if (query.exec() && query.next()) {
-            // Пользователь найден — сверяем пароль
-            if (query.value(0).toString() == pass) {
-                m_clients[user] = socket;
-                socket->write("AUTH_OK\n");
-
-                // Ставим статус Online в базе
-                QSqlQuery up;
-                up.prepare("UPDATE users SET is_online = TRUE WHERE username = :u");
-                up.bindValue(":u", user);
-                up.exec();
-
-                broadcastUserList();
-                log("User logged in: " + user);
-            } else {
-                socket->write("AUTH_FAIL:Неверный пароль!\n");
-                log("Неудачный вход для: " + user);
-            }
-        } else {
-            // Юзера нет — регистрируем нового
-            query.prepare("INSERT INTO users (username, password_hash, is_online) VALUES (:u, :p, TRUE)");
+            QSqlQuery query;
+            query.prepare("SELECT password_hash FROM users WHERE username = :u");
             query.bindValue(":u", user);
-            query.bindValue(":p", pass);
-            if (query.exec()) {
-                m_clients[user] = socket;
-                socket->write("AUTH_OK:Registered\n");
-                broadcastUserList();
-                log("Новый пользователь: " + user);
+
+            if (query.exec() && query.next()) {
+                if (query.value(0).toString() == pass) {
+                    m_clients[user] = socket;
+                    socket->write("AUTH_OK\n");
+
+                    QSqlQuery up;
+                    up.prepare("UPDATE users SET is_online = TRUE WHERE username = :u");
+                    up.bindValue(":u", user);
+                    up.exec();
+
+                    broadcastUserList();
+                    log("SUCCESS: " + user + " вошел в систему");
+                } else {
+                    socket->write("AUTH_FAIL:Неверный пароль\n");
+                    log("FAIL: Неверный пароль для " + user);
+                }
+            } else {
+                // РЕГИСТРАЦИЯ
+                query.prepare("INSERT INTO users (username, password_hash, is_online) VALUES (:u, :p, TRUE)");
+                query.bindValue(":u", user);
+                query.bindValue(":p", pass);
+                if (query.exec()) {
+                    m_clients[user] = socket;
+                    socket->write("AUTH_OK:Registered\n");
+                    broadcastUserList();
+                    log("SUCCESS: Новый юзер " + user + " создан");
+                }
             }
-        }
         }
         return;
     }
