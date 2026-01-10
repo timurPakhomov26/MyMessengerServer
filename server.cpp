@@ -313,7 +313,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         QString target = data.mid(13).trimmed();
 
         if (target == "GROUP_CHAT") {
-            // Отправляем историю общего чата
+
             sendGroupHistory(socket);
         } else {
             // Отправляем личную историю
@@ -336,10 +336,9 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
         if (target == "GROUP_CHAT") {
             // 1. Сохраняем в таблицу group_messages
             QSqlQuery query;
-            query.prepare("INSERT INTO group_messages (sender, message) VALUES (:s, :m)");
-            query.bindValue(":s", senderName);
-            query.bindValue(":m", text);
-            query.exec();
+            QString insertSql = QString("INSERT INTO group_messages (sender, message) VALUES ('%1', '%2')")
+                                    .arg(senderName).arg(text);
+            query.exec(insertSql);
 
             // 2. Рассылаем ВСЕМ онлайн (включая себя)
             QString time = QDateTime::currentDateTime().toString("hh:mm");
@@ -382,21 +381,19 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 void Server::sendGroupHistory(QTcpSocket *socket)
 {
     QSqlQuery query;
-    query.prepare("SELECT sender, message, timestamp FROM group_messages ORDER BY timestamp ASC LIMIT 50");
+    QString sql = "SELECT sender, message, timestamp FROM group_messages ORDER BY timestamp ASC LIMIT 50";
 
-    if (query.exec()) {
+    if (query.exec(sql)) {
         while (query.next()) {
-            QString sender = query.value(0).toString();
-            QString text = query.value(1).toString();
-            QString time = query.value(2).toDateTime().toString("hh:mm");
-
-            // Шлем в формате GROUP_MSG, чтобы клиент правильно их отрисовал
-            QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, sender, text);
+            QString packet = QString("GROUP_MSG:%1:%2:%3\n")
+            .arg(query.value(2).toDateTime().toString("hh:mm"),
+                 query.value(0).toString(),
+                 query.value(1).toString());
             socket->write(packet.toUtf8());
         }
-        socket->write("SYSTEM: История общего чата загружена\n");
+        socket->write("SYSTEM: История общака загружена\n");
     } else {
-        log("Ошибка загрузки истории общака: " + query.lastError().text(), LogLevel::Error);
+        log("ОШИБКА БД: " + query.lastError().text());
     }
 }
 
