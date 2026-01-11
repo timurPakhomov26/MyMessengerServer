@@ -74,6 +74,7 @@ void Server::onReadyRead()
     QString data = QString::fromUtf8(rawData).trimmed();
 
     if (rawData.startsWith("VOICE_DATA:")) {
+        if (!isAuthenticated) return;
         // Рассылаем звук ВСЕМ, кто сейчас помечен в базе как in_voice = TRUE
         // (Для скорости лучше кэшировать список участников в памяти QSet<QTcpSocket*>)
         for (QTcpSocket *s : m_voiceParticipants) {
