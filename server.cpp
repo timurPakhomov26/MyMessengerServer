@@ -306,6 +306,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 
     // Узнаем, кто нам пишет (сокет должен быть в m_clients после AUTH)
     QString senderName = m_clients.key(socket, "");
+
     if (senderName.isEmpty()) {
         socket->write("SYSTEM: Сначала авторизуйтесь (AUTH:login:pass)\n");
         return;
@@ -313,7 +314,7 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 
     // --- 1. ОБРАБОТКА КОМАНД ---
     if (data.startsWith("/get_history ")) {
-        QString target = data.section(':', 0, 0).trimmed();
+        QString target = data.mid(13).trimmed();
         if (target == "GROUP_CHAT") {
             log("Запрос истории ОБЩАКА от: " + senderName);
             sendGroupHistory(socket);
