@@ -373,17 +373,25 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
 
 void Server::sendGroupHistory(QTcpSocket *socket)
 {
-    QSqlQuery q("SELECT sender, message, timestamp FROM group_messages ORDER BY timestamp ASC LIMIT 50");
-    while (q.next()) {
-        QString packet = QString("GROUP_MSG:%1:%2:%3\n")
-        .arg(q.value(2).toDateTime().toString("hh:mm"),
-             q.value(0).toString(),
-             q.value(1).toString());
+    QSqlQuery q;
+    // Тянем последние 50 сообщений
+    QString sql = "SELECT sender, message, timestamp FROM group_messages ORDER BY timestamp ASC LIMIT 50";
 
-        // ВОТ ЗДЕСЬ ИСПОЛЬЗУЕТСЯ socket!
-        socket->write(packet.toUtf8());
+    if (q.exec(sql)) {
+        while (q.next()) {
+            QString sender = q.value(0).toString();
+            QString text = q.value(1).toString();
+            QString time = q.value(2).toDateTime().toString("hh:mm");
+
+            // Шлем в формате GROUP_MSG, чтобы клиент их узнал
+            QString packet = QString("GROUP_MSG:%1:%2:%3\n").arg(time, sender, text);
+            socket->write(packet.toUtf8());
+        }
+        socket->flush(); // Проталкиваем историю в сокет
+        log("История общака успешно отправлена юзеру " + m_clients.key(socket));
+    } else {
+        log("ОШИБКА ИСТОРИИ ОБЩАКА: " + q.lastError().text(), LogLevel::Error);
     }
-    socket->flush();
 }
 
 
