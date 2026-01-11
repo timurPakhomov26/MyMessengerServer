@@ -73,6 +73,17 @@ void Server::onReadyRead()
     }
     QString data = QString::fromUtf8(rawData).trimmed();
 
+    if (rawData.startsWith("VOICE_DATA:")) {
+        // Рассылаем звук ВСЕМ, кто сейчас помечен в базе как in_voice = TRUE
+        // (Для скорости лучше кэшировать список участников в памяти QSet<QTcpSocket*>)
+        for (QTcpSocket *s : m_voiceParticipants) {
+            if (s != socket) {
+                s->write(rawData);
+                s->flush();
+            }
+        }
+        return;
+    }
     // А. Блок авторизации (Сюда пускаем ДАЖЕ неавторизованных)
     if (data.startsWith("AUTH:")) {
         QStringList parts = data.split(':');
@@ -144,6 +155,7 @@ void Server::onDisconnected()
         broadcastUserList();
     }
     socket->deleteLater();
+    m_voiceParticipants.remove(socket);
 }
 
 QString Server::getUptime() const
@@ -322,6 +334,20 @@ void Server::handleTextMessage(QTcpSocket *socket, const QString &data)
             log("Запрос личной истории: " + senderName + " <-> " + target);
             sendChatHistory(socket, senderName, target);
         }
+        return;
+    }
+    //------------voice channel----------------
+    if (data == "/voice_enter") {
+        m_voiceParticipants.insert(socket);
+        QSqlQuery().exec(QString("UPDATE users SET in_online = TRUE WHERE username = '%1'").arg(senderName));
+        socket->write("SYSTEM: Ты вошел в голосовой канал\n");
+        return;
+    }
+
+    if (data == "/voice_leave") {
+        m_voiceParticipants.remove(socket);
+        QSqlQuery().exec(QString("UPDATE users SET in_online = FALSE WHERE username = '%1'").arg(senderName));
+        socket->write("SYSTEM: Ты покинул голосовой канал\n");
         return;
     }
 

@@ -44,6 +44,8 @@ private:
     void handleTextMessage(QTcpSocket *socket, const QString &data);
 
     void sendGroupHistory(QTcpSocket *socket);
+
+    QSet<QTcpSocket*> m_voiceParticipants;
 };
 
 #endif
