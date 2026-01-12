@@ -1,6 +1,7 @@
 #include "server.h"
 #include <QStringList>
 #include <QDateTime>
+#include <QNetworkDatagram>
 
 Server::Server(QObject *parent) : QObject(parent)
 {
@@ -16,6 +17,23 @@ Server::Server(QObject *parent) : QObject(parent)
 
     else
         log("Server failed to start!", LogLevel::Error);
+
+
+    m_udpVoiceSocket = new QUdpSocket(this);
+    m_udpVoiceSocket->bind(QHostAddress::Any, 1235); // Слушаем порт 1235
+
+    connect(m_udpVoiceSocket, &QUdpSocket::readyRead, [this](){
+        while (m_udpVoiceSocket->hasPendingDatagrams()) {
+            QNetworkDatagram datagram = m_udpVoiceSocket->receiveDatagram();
+            // Рассылаем полученный звук всем, кто в голосовом списке
+            for (QTcpSocket *client : m_voiceParticipants) {
+                if (client->peerAddress() != datagram.senderAddress() ||
+                    client->peerPort() != datagram.senderPort()) {
+                    m_udpVoiceSocket->writeDatagram(datagram.data(), client->peerAddress(), 1235);
+                }
+            }
+        }
+    });
 }
 
 // Функция рассылки списка имен всем подключенным

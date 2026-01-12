@@ -4,6 +4,7 @@
 #include <QObject>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QUdpSocket>
 #include <QMap>
 #include <QDateTime>
 #include <QSqlQuery>
@@ -28,6 +29,7 @@ private slots:
 
 private:
     QTcpServer *m_server;
+    QUdpSocket *m_udpVoiceSocket;
     QMap<QString, QTcpSocket*> m_clients;
     QDateTime m_startTime;
     QSqlDatabase m_db;
