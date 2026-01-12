@@ -326,8 +326,12 @@ void Server::handleFileTransfer(QTcpSocket *socket, const QByteArray &data)
         QByteArray relayPacket = "FILE_REC:" + senderName.toUtf8() + ":" + fileName.toUtf8() + ":" +
                                  QByteArray::number(fileBytes.size()) + ":" + fileBytes;
 
-        if (m_clients.contains(target)) m_clients[target]->write(relayPacket);
-        socket->write(relayPacket);
+        //if (m_clients.contains(target)) m_clients[target]->write(relayPacket);
+        //socket->write(relayPacket);
+        for (QTcpSocket *s : m_clients.values()) {
+            s->write(relayPacket);
+            s->flush();
+        }
     }
 }
 
